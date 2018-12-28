@@ -1,0 +1,395 @@
+/* Voy a decir Que No Fue Facil Stone PEro Ahy Tienes El Sistema De Cuentas "Por Nombre De Vault Cuentas 
+Para que se te aga mas sencillo llevar el  Sitema de datos del server y las cuentas publicadas Bajo Llave" 
+
+Changelog:
+
+Version 2.0
+
+- Todo el code optimizado y mas legible :|
+
+- String en el menu arreglado (Registado -> Registrado) :P
+
+Version 2.0.2
+
+- Nueva manera de hookeo para cambiar de equipo
+
+- Pequenios fixeos u_u
+
+To-do List:
+
+*/
+#include <amxmodx>
+#include <fvault>
+
+#define Hook_Chooseteam
+
+/*==================================================================================================
+  * GLOBAL VARS & ENUMS *
+==================================================================================================*/
+enum
+{
+	PASSWORD = 0,
+	NAME,
+	
+	MAX_CHANGE
+}
+
+enum
+{
+	UNREGISTERED = 0,
+	REGISTERED,
+	LOGGED,
+	
+	MAX_STATUS
+}
+
+new g_TempPassword[33][32],g_Password[33][32],g_Date[33][32],g_Status[33],gMsg,g_AlredyChanged[33][MAX_CHANGE],g_CanChange
+
+new const g_MsgArgs[][] = { "#Team_Select","#Team_Select_Spect","#IG_Team_Select","#IG_Team_Select_Spect" }
+
+new const g_Vault[] = "_cuentas_"
+
+new const g_szStatus[MAX_STATUS][] = { "No registrado","Registrado","Logueado" }
+
+/*==================================================================================================
+  * BEGINNING OF PLUGIN *
+==================================================================================================*/
+public plugin_init()
+{
+	register_plugin("SHR-Community","2.5","SHR-Community")
+	
+	register_message(get_user_msgid("ShowMenu"),"message_showmenu")
+	register_m essage(get_user_msgid("VGUIMenu"),"message_vguimenu")
+	
+	register_clcmd("INGRESAR_PASSWORD","cmd_password")
+	register_clcmd("INGRESAR_NICK","cmd_nick")
+	
+	#if defined Hook_Chooseteam
+	register_clcmd("chooseteam","cmd_block")
+	register_clcmd("jointeam","cmd_block")
+	#endif
+	
+	gMsg = CreateHudSyncObj()
+}
+
+/*==================================================================================================
+  * CLIENT_ FUNCS *
+==================================================================================================*/
+
+public client_putinserver(id)
+{
+	g_Password[id][0] = '^0';g_Status[id] = UNREGISTERED
+	
+	g_AlredyChanged[id][NAME] = 0;g_AlredyChanged[id][PASSWORD] = 0
+	
+	fvault_load(id)
+}
+
+public client_infochanged(id)
+{
+	static szName[32],szOldName[32]
+	
+	get_user_name(id,szOldName,31);get_user_info(id,"name",szName,31)
+	
+	if(equal(szOldName,szName) || g_CanChange)
+		return PLUGIN_CONTINUE
+		
+	client_cmd(id,"name %s",szName);set_user_info(id,"name",szName)
+	
+	return PLUGIN_HANDLED
+}
+
+/*==================================================================================================
+  * CMDs *
+==================================================================================================*/
+
+public cmd_password(id)
+{
+	static szName[32],szArgs[64];read_args(szArgs,63)
+	remove_quotes(szArgs);trim(szArgs)
+	
+	get_user_name(id,szName,31)
+	
+	if(containi(szArgs," ") != -1 || equal(szArgs,"")) {
+		show_msg(id,"Tu password contiene errores...")
+		return PLUGIN_HANDLED
+	}
+	switch(g_Status[id])
+	{
+		case UNREGISTERED: {
+			show_msg(id,"Confirma tu password para proseguir...");copy(g_TempPassword[id],31,szArgs)
+			show_menu_confirm(id)
+		}
+		case REGISTERED: {
+			if(!equal(g_Password[id],szArgs)) {
+				show_msg(id,"La password ingresada no coincide con la de la cuenta...")
+				return PLUGIN_HANDLED
+			}
+			
+			g_Status[id] = LOGGED;fvault_save(id)// To save the date
+			show_msg(id,"Te logueaste satisfactoriamente en tu cuenta...");change_team(id)
+		}
+		case LOGGED: {
+			if(g_AlredyChanged[id][PASSWORD]) {
+				show_msg(id,"Ya cambiaste tu password en este mapa...")
+				return PLUGIN_HANDLED
+			}
+			
+			show_msg(id,"Confirma tu password para cambiarla...");copy(g_TempPassword[id],31,szArgs)
+			show_menu_confirm(id)
+		}
+	}
+	
+	return PLUGIN_HANDLED
+}
+
+public cmd_nick(id)
+{
+	if(g_Status[id] != LOGGED || g_AlredyChanged[id][NAME])
+		return PLUGIN_HANDLED
+		
+	static args[32];read_args(args,31)
+	remove_quotes(args);trim(args)
+	
+	if(containi(args," ") != -1 || !args[1])
+		return PLUGIN_HANDLED
+	
+	if(change_name(id,args))
+		show_msg(id,"Tu nombre se ha cambiado con exito!")
+	
+	return PLUGIN_HANDLED
+}
+
+/*==================================================================================================
+  * BLOCK CHANGE TEAM *
+==================================================================================================*/
+
+public message_showmenu(msgid,dest,id)
+{
+	static szMsg[16];get_msg_arg_string(4,szMsg,15)
+	
+	for(new i;i < sizeof g_MsgArgs;i++)
+	{
+		if(equal(szMsg,g_MsgArgs[i]))
+		{
+			show_menu_block(id)
+			return PLUGIN_HANDLED
+		}
+	}
+	return PLUGIN_CONTINUE
+}
+
+public message_vguimenu(msgid,dest,id)
+{
+	if(get_msg_arg_int(1) != 2)
+		return PLUGIN_CONTINUE
+		
+	show_menu_block(id)
+	
+	return PLUGIN_HANDLED
+}
+
+#if defined Hook_Chooseteam
+public cmd_block(id) {
+	show_menu_block(id)
+	return PLUGIN_HANDLED
+}
+#endif
+
+/*==================================================================================================
+  * MENUs *
+==================================================================================================*/
+
+public show_menu_block(id)
+{
+	static szMenu[128],szName[32]
+	get_user_name(id,szName,31);formatex(szMenu,127,"\ySistema de CUENTAS por \rSHR-Servers^n\wESTADO ACTUAL: \y[ \r%s \y]\w^n^n%s%s",g_szStatus[g_Status[id]],g_Status[id] == LOGGED ? "Ultima vez que entraste \r":(g_Status[id] == REGISTERED ? "\yEstas registrado como \r":""),g_Status[id] == LOGGED ? g_Date[id]:(g_Status[id] == REGISTERED ? szName:""))
+	
+	new Menu = menu_create(szMenu,"handler_menu_block")
+	
+	formatex(szMenu,63,"%sLoguear cuenta",g_Status[id] != REGISTERED ? "\d":"\w")
+	menu_additem(Menu,szMenu,"1",0)
+	
+	formatex(szMenu,63,"%sRegistrar cuenta^n",g_Status[id] != UNREGISTERED ? "\d":"\w")
+	menu_additem(Menu,szMenu,"2",0)
+	
+	formatex(szMenu,63,"%s%sCambiar PASSWORD",g_Status[id] != LOGGED ? "\d":"\w",g_AlredyChanged[id][PASSWORD] ? "\d":"")
+	menu_additem(Menu,szMenu,"3",0)
+	
+	formatex(szMenu,63,"%s%sCambiar NICK^n",g_Status[id] != LOGGED ? "\d":"\w",g_AlredyChanged[id][NAME] ? "\d":"")
+	menu_additem(Menu,szMenu,"4",0)
+	
+	menu_additem(Menu,"Informacion","5",0)
+	
+	menu_setprop(Menu,MPROP_EXITNAME,"Salir")
+	
+	menu_display(id,Menu,0)
+}
+
+public handler_menu_block(id,menu,item)
+{
+	if(item == MENU_EXIT)
+	{
+		menu_destroy(menu)
+		return PLUGIN_HANDLED
+	}
+	
+	switch(item)
+	{
+		case 0: {
+			if(g_Status[id] != REGISTERED)
+			{
+				show_msg(id,"No puedes elegir esta opcion...")
+				return PLUGIN_HANDLED
+			}
+			
+			show_msg(id,"Ingresa tu PASSWORD para entrar a tu cuenta...");client_cmd(id,"messagemode INGRESAR_PASSWORD")
+		}
+		case 1: {
+			if(g_Status[id] != UNREGISTERED)
+			{
+				show_msg(id,"No puedes elegir esta opcion...")
+				return PLUGIN_HANDLED
+			}
+			
+			show_msg(id,"Ingresa una PASSWORD para crear una cuenta...");client_cmd(id,"messagemode INGRESAR_PASSWORD")
+		}
+		case 2: {
+			if(g_Status[id] != LOGGED || g_AlredyChanged[id][PASSWORD])
+			{
+				show_msg(id,"No estas logueado o ya cambiaste tu password durante el mapa...")
+				return PLUGIN_HANDLED
+			}
+			
+			show_msg(id,"Ingresa tu nueva PASSWORD...");client_cmd(id,"messagemode INGRESAR_PASSWORD")
+		}
+		case 3: {
+			if(g_Status[id] != LOGGED || g_AlredyChanged[id][NAME])
+			{
+				show_msg(id,"No estas logueado o ya cambiaste tu nick durante el mapa...")
+				return PLUGIN_HANDLED
+			}
+			
+			show_msg(id,"Ingresa tu nuevo NICK...");client_cmd(id,"messagemode INGRESAR_NICK")
+		}
+		case 4: {
+			set_hudmessage(0, 255, 0, -1.0, -1.0, 2, 4.0, 7.0)
+			ShowSyncHudMsg(id,gMsg,"Este sistema de cuentas fue creado por^nSHR-Community para los Nuevos Usuario^nConsiste en poder registrar un nick para evitar^nel robo del mismo, protegiendolo asi con password")
+		}
+	}
+	
+	return PLUGIN_HANDLED
+}
+
+public show_menu_confirm(id)
+{
+	static szTitle[128];formatex(szTitle,127,"\w%sLa password sera \r%s^n^n\yConfirmar?",g_Status[id] == LOGGED ? "Estas cambiando tu password^n":"Estas seteando tu password^n",g_TempPassword[id])
+	
+	new Menu = menu_create(szTitle,"handler_menu_confirm")
+	
+	menu_additem(Menu,"\rSi\w, confirmar","1",0)
+	menu_additem(Menu,"\rNo\w, deseo reescribirla","2",0)
+	
+	menu_setprop(Menu,MPROP_EXIT,MEXIT_NEVER)
+	
+	menu_display(id,Menu,0)
+}
+
+public handler_menu_confirm(id,menu,item)
+{
+	switch(item)
+	{
+		case 0: {
+			switch(g_Status[id])
+			{
+				case LOGGED: {
+					show_msg(id,"Tu password ha sido cambiada satisfactoiramente")
+					
+					copy(g_Password[id],31,g_TempPassword[id]);fvault_save(id)
+					
+					g_AlredyChanged[id][PASSWORD] = 1
+				}
+				case UNREGISTERED: {	
+					show_msg(id,"Tu cuenta ha sido creada satisfactoriamente")
+					
+					copy(g_Password[id],31,g_TempPassword[id]);fvault_save(id)
+					
+					g_Status[id] = LOGGED;change_team(id)
+				}
+			}
+		}
+		case 1: {
+			menu_destroy(menu)
+			
+			client_cmd(id,"messagemode INGRESAR_PASSWORD")
+			
+			g_Status[id] == LOGGED ? show_msg(id,"Ingresa tu nueva PASSWORD..."):show_msg(id,"Ingresa la PASSWORD para tu nueva cuenta...")
+		}
+	}
+	
+	return PLUGIN_HANDLED
+}
+
+/*==================================================================================================
+  * LOAD | SAVE *
+==================================================================================================*/
+
+public fvault_load(id)
+{
+	static szName[32],szData[64];get_user_name(id,szName,31)
+	
+	if(!fvault_get_data(g_Vault,szName,szData,63))
+		g_Status[id] = UNREGISTERED
+	else {
+		strbreak(szData,g_Password[id],31,g_Date[id],31)
+		
+		g_Status[id] = REGISTERED
+	}
+}
+
+public fvault_save(id)
+{
+	static szName[32],szData[64];get_user_name(id,szName,31)
+	
+	get_time("%c",g_Date[id],31);formatex(szData,63,"%s %s",g_Password[id],g_Date[id])
+	
+	fvault_set_data(g_Vault,szName,szData)
+}
+
+/*==================================================================================================
+  * STOCKS *
+==================================================================================================*/
+stock change_name(const id, const string[])
+{
+	static szName[32],szData[64];get_user_name(id,szName,31)
+	
+	if(equal(szName,string))
+		return 0
+		
+	if(fvault_get_data(g_Vault,string,szData,63))
+		return 0
+	
+	g_CanChange = 1;set_user_info(id,"name",string)
+	g_CanChange = 0
+	
+	fvault_remove_key(g_Vault,szName)
+	
+	set_task(1.0,"fvault_save",id)
+	
+	g_AlredyChanged[id][NAME] = 1
+	
+	return 1
+}
+
+stock change_team(const id)
+{
+	engclient_cmd(id,"jointeam","5")
+	
+	engclient_cmd(id,"joinclass","5")
+}
+
+stock show_msg(const id, const string[])
+{
+	set_hudmessage(0, 255, 0, 0.15, 0.10, 1, 2.0, 10.0)
+	ShowSyncHudMsg(id,gMsg,"%s",string)
+}
